@@ -23,6 +23,7 @@ import (
 	"github.com/pingcap/kvproto/pkg/kvrpcpb"
 	"github.com/pingcap/kvproto/pkg/metapb"
 	"github.com/pingcap/pd/pd-client"
+	"golang.org/x/net/context"
 )
 
 // RegionCache caches Regions loaded from PD.
@@ -230,7 +231,7 @@ func (c *RegionCache) loadRegion(bo *Backoffer, key []byte) (*Region, error) {
 			}
 		}
 
-		meta, leader, err := c.pdClient.GetRegion(key)
+		meta, leader, err := c.pdClient.GetRegion(context.TODO(), key)
 		if err != nil {
 			backoffErr = errors.Errorf("loadRegion from PD failed, key: %q, err: %v", key, err)
 			continue
@@ -290,7 +291,7 @@ func (c *RegionCache) ClearStoreByID(id uint64) {
 
 func (c *RegionCache) loadStoreAddr(bo *Backoffer, id uint64) (string, error) {
 	for {
-		store, err := c.pdClient.GetStore(id)
+		store, err := c.pdClient.GetStore(context.TODO(), id)
 		if err != nil {
 			err = errors.Errorf("loadStore from PD failed, id: %d, err: %v", id, err)
 			if err = bo.Backoff(boPDRPC, err); err != nil {
