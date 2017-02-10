@@ -1,5 +1,5 @@
-hash: e3d0a2c456701c8149ce41bb8941e2c468f3ddd0ece9883cf01278e9fada6c69
-updated: 2017-02-04T13:33:25.390061805+08:00
+hash: 6511fc8e4deebe5d675adcca51722ce3899f3142a02c400e9358526a0415b6b4
+updated: 2017-02-10T11:21:55.067017855+08:00
 imports:
 - name: bitbucket.org/ww/goautoneg
   version: 75cd24fc2f2c2a2088577d12123ddee5f54e0675
@@ -100,7 +100,7 @@ imports:
   - leveldb/table
   - leveldb/util
 - name: github.com/pingcap/kvproto
-  version: b66543960fb3508671152f6c9f4a09ee9d7a2322
+  version: a6751b0d0db0dfed4d83350ce87c44cd9ff1f546
   subpackages:
   - pkg/coprocessor
   - pkg/eraftpb
@@ -109,17 +109,15 @@ imports:
   - pkg/metapb
   - pkg/msgpb
   - pkg/pdpb
+  - pkg/pdpb2
   - pkg/raft_cmdpb
   - pkg/raft_serverpb
   - pkg/util
 - name: github.com/pingcap/pd
-  version: 3d5bb2b3a056925b656d29b88a5b216f6f309368
+  version: cde63a6ca70622ce640a954e9fc4a89ca7ecab54
   subpackages:
   - pd-client
   - pkg/apiutil
-  - pkg/metricutil
-  - pkg/rpcutil
-  - pkg/timeutil
 - name: github.com/pingcap/tipb
   version: 7be8865936fd4dfee0591913c31c07be11da5d19
   subpackages:
@@ -175,7 +173,9 @@ imports:
   subpackages:
   - rate
 - name: google.golang.org/grpc
-  version: 02fca896ff5f50c6bbbee0860345a49344b37a03
+  version: 777daa17ff9b5daef1cfdf915088a2ada3332bf0
+  repo: https://github.com/grpc/grpc-go.git
+  vcs: git
   subpackages:
   - codes
   - credentials

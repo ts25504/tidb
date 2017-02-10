@@ -84,7 +84,9 @@ import:
   - encoding/unicode
   - transform
 - package: google.golang.org/grpc
-  version: 02fca896ff5f50c6bbbee0860345a49344b37a03
+  version: v1.0.4
+  repo: https://github.com/grpc/grpc-go.git
+  vcs: git
   subpackages:
   - codes
   - credentials
@@ -141,14 +143,14 @@ import:
   subpackages:
   - lex
 - package: github.com/pingcap/pd
-  version: 3d5bb2b3a056925b656d29b88a5b216f6f309368
+  version: cde63a6ca70622ce640a954e9fc4a89ca7ecab54
 - package: github.com/pingcap/tipb
   version: 7be8865936fd4dfee0591913c31c07be11da5d19
   subpackages:
   - go-binlog
   - go-tipb
 - package: github.com/pingcap/kvproto
-  version: b66543960fb3508671152f6c9f4a09ee9d7a2322
+  version: a6751b0d0db0dfed4d83350ce87c44cd9ff1f546
 - package: github.com/gogo/protobuf
   version: ^0.3.0
   subpackages:
