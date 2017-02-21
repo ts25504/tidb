@@ -218,10 +218,10 @@ func (s *session) doCommitWithRetry() error {
 	err := s.doCommit()
 	if err != nil {
 		if s.isRetryableError(err) {
-			// Transactions will retry 2 ~ 10 times.
+			// Transactions will retry 2 ~ commitRetryLimit times.
 			// We make larger transactions retry less times to prevent cluster resource outage.
 			txnSizeRate := float64(txnSize) / float64(kv.TxnTotalSizeLimit)
-			maxRetryCount := 10 - int(txnSizeRate*9.0)
+			maxRetryCount := commitRetryLimit - int(float64(commitRetryLimit-1)*txnSizeRate)
 			err = s.retry(maxRetryCount)
 		}
 	}
@@ -462,7 +462,9 @@ func (s *session) Execute(sql string) ([]ast.RecordSet, error) {
 		r, err := runStmt(s, st)
 		ph.EndStatement(s.stmtState)
 		if err != nil {
-			log.Warnf("[%d] session error:\n%v\n%s", connID, err, s)
+			if !terror.ErrorEqual(err, kv.ErrKeyExists) {
+				log.Warnf("[%d] session error:\n%v\n%s", connID, errors.ErrorStack(err), s)
+			}
 			return nil, errors.Trace(err)
 		}
 		sessionExecuteRunDuration.Observe(time.Since(startTS).Seconds())
@@ -490,7 +492,7 @@ func (s *session) PrepareStmt(sql string) (stmtID uint32, paramCount int, fields
 		SQLText: sql,
 	}
 	prepareExec.DoPrepare()
-	return prepareExec.ID, prepareExec.ParamCount, nil, prepareExec.Err
+	return prepareExec.ID, prepareExec.ParamCount, prepareExec.Fields, prepareExec.Err
 }
 
 // checkArgs makes sure all the arguments' types are known and can be handled.
@@ -830,7 +832,10 @@ func (s *session) loadCommonGlobalVariablesIfNeeded() error {
 	}
 	// Set the variable to true to prevent cyclic recursive call.
 	vars.CommonGlobalLoaded = true
+	save := privilege.GetPrivilegeChecker(s)
+	privilege.BindPrivilegeChecker(s, nil)
 	rs, err := s.ExecRestrictedSQL(s, loadCommonGlobalVarsSQL)
+	privilege.BindPrivilegeChecker(s, save)
 	if err != nil {
 		vars.CommonGlobalLoaded = false
 		log.Errorf("Failed to load common global variables.")
@@ -900,6 +905,28 @@ func (s *session) ActivePendingTxn() error {
 	}
 	s.txn = txnWithErr.txn
 	err := s.loadCommonGlobalVariablesIfNeeded()
+	if err != nil {
+		return errors.Trace(err)
+	}
+	return nil
+}
+
+// InitTxnWithStartTS create a transaction with startTS.
+func (s *session) InitTxnWithStartTS(startTS uint64) error {
+	if s.txn != nil && s.txn.Valid() {
+		return nil
+	}
+	if s.txnCh == nil {
+		return errors.New("transaction channel is not set")
+	}
+	// no need to get txn from txnCh since txn should init with startTs
+	s.txnCh = nil
+	var err error
+	s.txn, err = s.store.BeginWithStartTS(startTS)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	err = s.loadCommonGlobalVariablesIfNeeded()
 	if err != nil {
 		return errors.Trace(err)
 	}
