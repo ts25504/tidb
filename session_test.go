@@ -25,6 +25,7 @@ import (
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/model"
 	"github.com/pingcap/tidb/mysql"
+	"github.com/pingcap/tidb/parser"
 	"github.com/pingcap/tidb/plan"
 	"github.com/pingcap/tidb/sessionctx"
 	"github.com/pingcap/tidb/store/localstore"
@@ -1466,13 +1467,9 @@ func (s *testSessionSuite) TestExecRestrictedSQL(c *C) {
 	dbName := "test_exec_restricted_sql"
 	dropDBSQL := fmt.Sprintf("drop database %s;", dbName)
 	se := newSession(c, s.store, dbName).(*session)
-	r, err := se.ExecRestrictedSQL(se, "select 1;")
-	c.Assert(r, NotNil)
+	r, _, err := se.ExecRestrictedSQL(se, "select 1;")
 	c.Assert(err, IsNil)
-	_, err = se.ExecRestrictedSQL(se, "select 1; select 2;")
-	c.Assert(err, NotNil)
-	_, err = se.ExecRestrictedSQL(se, "")
-	c.Assert(err, NotNil)
+	c.Assert(len(r), Equals, 1)
 
 	mustExecSQL(c, se, dropDBSQL)
 }
@@ -2630,4 +2627,31 @@ func (s *testSessionSuite) TestISColumns(c *C) {
 	mustExecSQL(c, se, sql)
 
 	mustExecSQL(c, se, dropDBSQL)
+}
+
+func (s *testSessionSuite) TestRetryCleanTxn(c *C) {
+	defer testleak.AfterTest(c)()
+	dbName := "test_retry_clean_txn"
+	se := newSession(c, s.store, dbName).(*session)
+	se.Execute("create table retrytxn (a int unique, b int)")
+	_, err := se.Execute("insert retrytxn values (1, 1)")
+	c.Assert(err, IsNil)
+	se.Execute("begin")
+	se.Execute("update retrytxn set b = b + 1 where a = 1")
+
+	// Make retryable error.
+	se2 := newSession(c, s.store, dbName)
+	se2.Execute("update retrytxn set b = b + 1 where a = 1")
+
+	// Hijack retry history, add a statement that returns error.
+	history := getHistory(se)
+	stmtNode, err := parser.New().ParseOneStmt("insert retrytxn values (2, 'a')", "", "")
+	c.Assert(err, IsNil)
+	stmt, err := Compile(se, stmtNode)
+	resetStmtCtx(se, stmtNode)
+	history.add(0, stmt, se.sessionVars.StmtCtx)
+	_, err = se.Execute("commit")
+	c.Assert(err, NotNil)
+	c.Assert(se.Txn(), IsNil)
+	c.Assert(se.sessionVars.InTxn(), IsFalse)
 }

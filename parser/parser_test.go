@@ -21,6 +21,7 @@ import (
 
 	. "github.com/pingcap/check"
 	"github.com/pingcap/tidb/ast"
+	"github.com/pingcap/tidb/mysql"
 	"github.com/pingcap/tidb/util/testleak"
 )
 
@@ -48,11 +49,11 @@ func (s *testParserSuite) TestSimple(c *C) {
 		"exists", "explain", "false", "float", "for", "force", "foreign", "from",
 		"fulltext", "grant", "group", "having", "hour_microsecond", "hour_minute",
 		"hour_second", "if", "ignore", "in", "index", "infile", "inner", "insert", "int", "into", "integer",
-		"interval", "is", "join", "key", "keys", "leading", "left", "like", "limit", "lines", "load",
+		"interval", "is", "join", "key", "keys", "kill", "leading", "left", "like", "limit", "lines", "load",
 		"localtime", "localtimestamp", "lock", "longblob", "longtext", "mediumblob", "maxvalue", "mediumint", "mediumtext",
 		"minute_microsecond", "minute_second", "mod", "not", "no_write_to_binlog", "null", "numeric",
 		"on", "option", "or", "order", "outer", "partition", "precision", "primary", "procedure", "range", "read", "real",
-		"references", "regexp", "rename", "repeat", "replace", "restrict", "right", "rlike",
+		"references", "regexp", "rename", "repeat", "replace", "revoke", "restrict", "right", "rlike",
 		"schema", "schemas", "second_microsecond", "select", "set", "show", "smallint",
 		"starting", "table", "terminated", "then", "tinyblob", "tinyint", "tinytext", "to",
 		"trailing", "true", "union", "unique", "unlock", "unsigned",
@@ -80,7 +81,7 @@ func (s *testParserSuite) TestSimple(c *C) {
 		"auto_increment", "after", "begin", "bit", "bool", "boolean", "charset", "columns", "commit",
 		"date", "datediff", "datetime", "deallocate", "do", "from_days", "end", "engine", "engines", "execute", "first", "full",
 		"local", "names", "offset", "password", "prepare", "quick", "rollback", "session", "signed",
-		"start", "global", "tables", "text", "time", "timestamp", "transaction", "truncate", "unknown",
+		"start", "global", "tables", "text", "time", "timestamp", "tidb", "transaction", "truncate", "unknown",
 		"value", "warnings", "year", "now", "substr", "substring", "mode", "any", "some", "user", "identified",
 		"collation", "comment", "avg_row_length", "checksum", "compression", "connection", "key_block_size",
 		"max_rows", "min_rows", "national", "row", "quarter", "escape", "grants", "status", "fields", "triggers",
@@ -89,7 +90,7 @@ func (s *testParserSuite) TestSimple(c *C) {
 		"compact", "redundant", "sql_no_cache sql_no_cache", "sql_cache sql_cache", "action", "round",
 		"enable", "disable", "reverse", "space", "privileges", "get_lock", "release_lock", "sleep", "no", "greatest", "least",
 		"binlog", "hex", "unhex", "function", "indexes", "from_unixtime", "processlist", "events", "less", "than", "timediff",
-		"ln", "log", "log2", "log10", "timestampdiff",
+		"ln", "log", "log2", "log10", "timestampdiff", "pi",
 	}
 	for _, kw := range unreservedKws {
 		src := fmt.Sprintf("SELECT %s FROM tbl;", kw)
@@ -1152,15 +1153,23 @@ func (s *testParserSuite) TestDDL(c *C) {
 		union_name varbinary(52) NOT NULL,
 		union_id int(11) DEFAULT '0',
 		PRIMARY KEY (union_name)) ENGINE=MyISAM DEFAULT CHARSET=binary;`, true},
-		// create table with multiple index options
+		// Create table with multiple index options.
 		{`create table t (c int, index ci (c) USING BTREE COMMENT "123");`, true},
 		// for default value
 		{"CREATE TABLE sbtest (id INTEGER UNSIGNED NOT NULL AUTO_INCREMENT, k integer UNSIGNED DEFAULT '0' NOT NULL, c char(120) DEFAULT '' NOT NULL, pad char(60) DEFAULT '' NOT NULL, PRIMARY KEY  (id) )", true},
 		{"create table test (create_date TIMESTAMP NOT NULL COMMENT '创建日期 create date' DEFAULT now());", true},
 		{"create table ts (t int, v timestamp(3) default CURRENT_TIMESTAMP(3));", true},
-
 		// Create table with primary key name.
 		{"create table if not exists `t` (`id` int not null auto_increment comment '消息ID', primary key `pk_id` (`id`) );", true},
+		// Create table with like.
+		{"create table a like b", true},
+		{"create table if not exists a like b", true},
+		{"create table t (a timestamp default now)", false},
+		{"create table t (a timestamp default now())", true},
+		{"create table t (a timestamp default now() on update now)", false},
+		{"create table t (a timestamp default now() on update now())", true},
+		// Create table with ON UPDATE CURRENT_TIMESTAMP(6), specify fraction part.
+		{"CREATE TABLE IF NOT EXISTS `general_log` (`event_time` timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),`user_host` mediumtext NOT NULL,`thread_id` bigint(21) unsigned NOT NULL,`server_id` int(10) unsigned NOT NULL,`command_type` varchar(64) NOT NULL,`argument` mediumblob NOT NULL) ENGINE=CSV DEFAULT CHARSET=utf8 COMMENT='General log'", true},
 
 		// for alter table
 		{"ALTER TABLE t ADD COLUMN a SMALLINT UNSIGNED", true},
@@ -1234,6 +1243,7 @@ func (s *testParserSuite) TestPrivilege(c *C) {
 	defer testleak.AfterTest(c)()
 	table := []testCase{
 		// for create user
+		{`CREATE USER 'test'`, true},
 		{`CREATE USER IF NOT EXISTS 'root'@'localhost' IDENTIFIED BY 'new-password'`, true},
 		{`CREATE USER 'root'@'localhost' IDENTIFIED BY 'new-password'`, true},
 		{`CREATE USER 'root'@'localhost' IDENTIFIED BY PASSWORD 'hashstring'`, true},
@@ -1259,6 +1269,19 @@ func (s *testParserSuite) TestPrivilege(c *C) {
 		{"GRANT SELECT, INSERT ON mydb.mytbl TO 'someuser'@'somehost';", true},
 		{"GRANT SELECT (col1), INSERT (col1,col2) ON mydb.mytbl TO 'someuser'@'somehost';", true},
 		{"grant all privileges on zabbix.* to 'zabbix'@'localhost' identified by 'password';", true},
+		{"GRANT SELECT ON test.* to 'test'", true}, // For issue 2654.
+
+		// for revoke statement
+		{"REVOKE ALL ON db1.* FROM 'jeffrey'@'localhost';", true},
+		{"REVOKE SELECT ON db2.invoice FROM 'jeffrey'@'localhost';", true},
+		{"REVOKE ALL ON *.* FROM 'someuser'@'somehost';", true},
+		{"REVOKE SELECT, INSERT ON *.* FROM 'someuser'@'somehost';", true},
+		{"REVOKE ALL ON mydb.* FROM 'someuser'@'somehost';", true},
+		{"REVOKE SELECT, INSERT ON mydb.* FROM 'someuser'@'somehost';", true},
+		{"REVOKE ALL ON mydb.mytbl FROM 'someuser'@'somehost';", true},
+		{"REVOKE SELECT, INSERT ON mydb.mytbl FROM 'someuser'@'somehost';", true},
+		{"REVOKE SELECT (col1), INSERT (col1,col2) ON mydb.mytbl FROM 'someuser'@'somehost';", true},
+		{"REVOKE all privileges on zabbix.* FROM 'zabbix'@'localhost' identified by 'password';", true},
 	}
 	s.RunTest(c, table)
 }
@@ -1434,4 +1457,32 @@ func (s *testParserSuite) TestTimestampDiffUnit(c *C) {
 	f, ok = expr.(*ast.FuncCallExpr)
 	c.Assert(ok, IsTrue)
 	c.Assert(f.Args[0].GetDatum().GetString(), Equals, "MONTH")
+}
+
+func (s *testParserSuite) TestSessionManage(c *C) {
+	defer testleak.AfterTest(c)()
+	table := []testCase{
+		// Kill statement.
+		// See https://dev.mysql.com/doc/refman/5.7/en/kill.html
+		{"kill 23123", true},
+		{"kill connection 23123", true},
+		{"kill query 23123", true},
+		{"kill tidb 23123", true},
+		{"kill tidb connection 23123", true},
+		{"kill tidb query 23123", true},
+	}
+	s.RunTest(c, table)
+}
+
+func (s *testParserSuite) TestSQLModeANSIQuotes(c *C) {
+	parser := New()
+	parser.SetSQLMode(mysql.ModeANSIQuotes)
+	tests := []string{
+		`CREATE TABLE "table" ("id" int)`,
+		`select * from t "tt"`,
+	}
+	for _, test := range tests {
+		_, err := parser.Parse(test, "", "")
+		c.Assert(err, IsNil)
+	}
 }
