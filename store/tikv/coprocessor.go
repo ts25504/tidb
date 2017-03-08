@@ -85,6 +85,7 @@ func (c *CopClient) Send(ctx goctx.Context, req *kv.Request) kv.Response {
 		store:       c.store,
 		req:         req,
 		concurrency: req.Concurrency,
+		closed:      make(chan struct{}),
 	}
 	it.mu.tasks = tasks
 	if it.concurrency > len(tasks) {
@@ -304,6 +305,7 @@ type copIterator struct {
 		respGot  int
 		finished bool
 	}
+	closed   chan struct{}
 	respChan chan *coprocessor.Response
 	errChan  chan error
 }
@@ -356,6 +358,8 @@ func (it *copIterator) work(ctx goctx.Context) {
 		select {
 		case ch <- resp:
 		case <-ctx.Done():
+			return
+		case <-it.closed:
 			return
 		}
 	}
@@ -521,6 +525,7 @@ func (it *copIterator) Close() error {
 	it.mu.Lock()
 	it.mu.finished = true
 	it.mu.Unlock()
+	close(it.closed)
 	return nil
 }
 
